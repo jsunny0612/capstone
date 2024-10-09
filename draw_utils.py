@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 reader = easyocr.Reader(['ko', 'en'])
 
 # 디렉토리 설정
-directory = "/home/myeongmook/mook/eyeGazeToScreen/easyocr_data/tiger/"
+directory = "./easyocr_data/tiger/"
 image_files = sorted([f for f in os.listdir(directory) if f.endswith(".jpg")])
 
 # 현재 이미지 인덱스 설정
@@ -346,114 +346,7 @@ def on_click(event):
 
         # 클릭으로 인해 이미지가 변경되었을 때, 새 이미지 로드 및 표시
         display_easyocr_canv('RNG')
-'''
-def detect_text_bounding_box(image, current_word_index):
-    # EasyOCR을 사용하여 텍스트 감지
-    result = reader.readtext(image)
 
-    # PIL 이미지를 생성하여 바운딩 박스를 그릴 준비
-    image_pil = Image.fromarray(image)
-    font = ImageFont.truetype("NotoSans-Regular.ttf", 15)  # 폰트 크기 설정
-    draw = ImageDraw.Draw(image_pil)
-
-    words_boxes = []  # 각 단어의 바운딩 박스 저장 리스트
-    current_box = None  # 현재 단어의 바운딩 박스
-
-    # 텍스트 감지 결과에서 각 단어를 순차적으로 처리
-    for i, detection in enumerate(result):
-        box = detection[0]  # 바운딩 박스 좌표 (4개의 점)
-        text = detection[1]  # 감지된 텍스트
-
-        # 텍스트를 음절 단위로 분리 (각 음절을 개별적으로 처리)
-        syllables = list(text)  # 문자열을 음절(각각의 글자)로 나눔
-
-        # 바운딩 박스의 좌상단과 우하단 좌표 추출
-        (x_min, y_min) = box[0]  # 좌상단 좌표
-        (x_max, y_max) = box[2]  # 우하단 좌표
-
-        # 각 음절의 상대적인 위치를 계산하여 바운딩 박스를 설정
-        total_len = len([syllable for syllable in syllables if syllable != " "])  # 공백을 제외한 음절 개수
-        syllable_start_x = x_min  # 음절의 시작 위치
-
-        for j, syllable in enumerate(syllables):
-            if syllable == " ":  # 공백일 경우 바운딩 박스를 생략
-                continue
-
-            syllable_box_width = (x_max - x_min) / total_len  # 각 음절의 폭을 계산
-            syllable_box_x_max = syllable_start_x + syllable_box_width  # 음절의 우하단 X 좌표
-
-            # 현재 음절에 대한 바운딩 박스를 그림
-            if current_word_index == len(words_boxes):
-                draw.rectangle([(syllable_start_x, y_min), (syllable_box_x_max, y_max)], outline="green", width=2)
-                # draw.text((syllable_start_x, y_min - 20), syllable, font=font, fill="black")
-                current_box = ((syllable_start_x, y_min), (syllable_box_x_max, y_max))  # 현재 음절의 바운딩 박스 저장
-
-            # 음절의 바운딩 박스를 저장
-            words_boxes.append(((syllable_start_x, y_min), (syllable_box_x_max, y_max)))
-            syllable_start_x = syllable_box_x_max + 2  # 음절 간 간격
-
-    # 바운딩 박스가 그려진 이미지를 반환
-    return np.array(image_pil), current_box
-
-def display_easyocr_canv(CANV_MODE, cur_pos=None):
-    global focus, rng_pos, current_index, current_word_index  # 초점 상태, 랜덤 목표 위치
-    global adj_H, W_px
-
-    # 이미지 로드
-    image_path = os.path.join(directory, image_files[current_index])
-    image = cv2.imread(image_path)
-    if image is None:
-        print(f"이미지를 불러올 수 없습니다: {image_files[current_index]}")
-        current_index = (current_index + 1) % len(image_files)  # 이미지 로드 실패 시 다음 이미지로 이동
-        current_word_index = 0  # 단어 인덱스 초기화
-        return
-
-    img_height, img_width = image.shape[:2]
-    scale = min(W_px / img_width, adj_H / img_height)  # 화면에 맞춰 비율을 조정
-    window_width, window_height = int(img_width * scale), int(img_height * scale)
-
-    image = cv2.resize(image, (window_width, window_height))
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    img = image.copy()  # 원본 이미지 복사
-
-    if CANV_MODE == 'RNG':
-        # 텍스트 감지 및 바운딩 박스 그리기 수행 (현재 단어만)
-        image_with_boxes, current_box = detect_text_bounding_box(image, current_word_index)
-
-        # 현재 단어에 대한 바운딩 박스가 있는지 확인
-        if current_box:
-            # 바운딩 박스 내부에 cur_pos가 있으면 true
-            x_min, y_min = current_box[0]
-            x_max, y_max = current_box[1]
-
-            if cur_pos and x_min <= cur_pos[0] <= x_max and y_min <= cur_pos[1] <= y_max:
-                # cur_pos가 바운딩 박스 안에 있을 때만 다음 박스로 이동
-                current_word_index += 1
-                display_easyocr_canv.rng_pos_set = False  # 새로운 단어에 대한 좌표 설정을 준비
-            else:
-                # 현재 좌표를 빨간색으로 표시
-                img = np.array(image_with_boxes)  # 바운딩 박스가 그려진 이미지 사용
-                img = color_grid(img, cur_pos, paint=RED, pxstep=GRID_STEP)  # 현재 좌표 빨간색으로 표시
-
-        # 바운딩 박스 내에 cur_pos가 있는지 확인 후 업데이트
-        if cur_pos:
-            img = color_grid(img, cur_pos, paint=RED, pxstep=GRID_STEP)  # 현재 좌표 빨간색으로 표시
-
-        # 이미지 출력
-        cv2.imshow('canvas', img)
-        cv2.moveWindow("canvas", 0, 0)
-
-    elif CANV_MODE == 'SEQ':
-        rng_pos = demo_sequence(img)
-    elif CANV_MODE == 'UPDOWN':
-        rng_pos = demo_updown(img)
-    elif CANV_MODE == 'LEFTRIGHT':
-        rng_pos = demo_leftright(img)
-    elif CANV_MODE == 'STABILITY':
-        rng_pos = demo_stability(img)
-
-    return (rng_pos, cur_pos)
-'''
 
 def detect_text_bounding_box(image, current_word_index):
     # EasyOCR을 사용하여 텍스트 감지
