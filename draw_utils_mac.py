@@ -400,24 +400,21 @@ def detect_text_bounding_box(image, current_word_index):
 
 def display_easyocr_canv(CANV_MODE, cur_pos=None):
     global focus, rng_pos, current_index, current_word_index  # 초점 상태, 랜덤 목표 위치
-    global adj_H, W_px
+    global adj_H, W_px, GRID_STEP, bottom_line
+
+    img = np.zeros((adj_H, W_px, 3))  # 고정 크기의 빈 캔버스 생성
 
     # 이미지 로드
     image_path = os.path.join(directory, image_files[current_index])
     image = cv2.imread(image_path)
     if image is None:
         print(f"이미지를 불러올 수 없습니다: {image_files[current_index]}")
-        current_index = current_index + 1 # 이미지 로드 실패 시 다음 이미지로 이동
+        current_index += 1  # 이미지 로드 실패 시 다음 이미지로 이동
         current_word_index = 0  # 단어 인덱스 초기화
         return
 
-    img_height, img_width = image.shape[:2]
-    scale = min(W_px / img_width, adj_H / img_height)  # 화면에 맞춰 비율을 조정
-    window_width, window_height = int(img_width * scale), int(img_height * scale)
-
-    image = cv2.resize(image, (window_width, window_height))
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    img = image.copy()  # 원본 이미지 복사
+    # 이미지를 고정된 캔버스 크기에 맞춰 리사이즈
+    image = cv2.resize(image, (W_px, adj_H))
 
     if CANV_MODE == 'RNG':
         # 텍스트 감지 및 바운딩 박스 그리기 수행 (모든 단어)
@@ -425,32 +422,49 @@ def display_easyocr_canv(CANV_MODE, cur_pos=None):
 
         # 현재 단어에 대한 바운딩 박스가 있는지 확인
         if current_box:
-            # 바운딩 박스 내부에 cur_pos가 있으면 true
+            # 바운딩 박스 내부에 cur_pos가 있는지 그리드 단위로 좌표를 맞춘 후 확인
             x_min, y_min = current_box[0]
             x_max, y_max = current_box[1]
 
-            if cur_pos and x_min <= cur_pos[0] <= x_max and y_min <= cur_pos[1] <= y_max:
-                # cur_pos가 바운딩 박스 안에 있을 때만 다음 박스로 이동
-                current_word_index += 1
-                display_easyocr_canv.rng_pos_set = False  # 새로운 단어에 대한 좌표 설정을 준비
-            else:
-                # 현재 좌표를 빨간색으로 표시
-                img = np.array(image_with_boxes)  # 바운딩 박스가 그려진 이미지 사용
-                img = color_grid(img, cur_pos, paint=RED, pxstep=GRID_STEP)  # 현재 좌표 빨간색으로 표시
+            if cur_pos:
+                # cur_pos를 그리드에 맞춰 조정
+                xy_cur = (cur_pos[0] // GRID_STEP * GRID_STEP, (cur_pos[1] - bottom_line // 2) // GRID_STEP * GRID_STEP)
+
+                # 바운딩 박스와 비교 (xy_cur를 사용하여 그리드 단위로 비교)
+                if x_min <= xy_cur[0] <= x_max and y_min <= xy_cur[1] <= y_max:
+                    # cur_pos가 바운딩 박스 안에 있을 때만 다음 박스로 이동
+                    current_word_index += 1
+                    display_easyocr_canv.rng_pos_set = False  # 새로운 단어에 대한 좌표 설정을 준비
+                else:
+                    # 현재 좌표를 빨간색으로 표시
+                    img = np.array(image_with_boxes)  # 바운딩 박스가 그려진 이미지 사용
+                    img = color_grid(img, xy_cur, paint=RED, pxstep=GRID_STEP)  # 그리드에 맞춘 현재 좌표를 빨간색으로 표시
 
         # 모든 단어(음절)가 감지되었으면 다음 이미지로 넘어가기
         if current_word_index >= total_words:
-            current_index = current_index + 1   		# 다음 이미지로 이동
-            current_word_index = 0  					# 단어 인덱스 초기화
-            display_easyocr_canv.rng_pos_set = False  	# 새로운 이미지에 대한 좌표 설정을 준비
+            current_index = current_index + 1  # 다음 이미지로 이동
+            current_word_index = 0  # 단어 인덱스 초기화
+            display_easyocr_canv.rng_pos_set = False  # 새로운 이미지에 대한 좌표 설정을 준비
 
         # 바운딩 박스 내에 cur_pos가 있는지 확인 후 업데이트
         if cur_pos:
-            img = color_grid(img, cur_pos, paint=RED, pxstep=GRID_STEP)  # 현재 좌표 빨간색으로 표시
+            # cur_pos를 그리드에 맞춘 후 빨간색으로 표시
+            xy_cur = (cur_pos[0] // GRID_STEP * GRID_STEP, (cur_pos[1] - bottom_line // 2) // GRID_STEP * GRID_STEP)
+            img = color_grid(img, xy_cur, paint=RED, pxstep=GRID_STEP)
 
-        # 이미지 출력
+        		
+
         cv2.imshow('canvas', img)
+        cv2.resizeWindow("canvas", W_px, H_px)
         cv2.moveWindow("canvas", 0, 0)
+        cv2.namedWindow('canvas', cv2.WINDOW_NORMAL)  # 창을 조절 가능하게 설정
+        cv2.setWindowProperty("canvas", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)  # 전체화면 모드로 설정
+
+        # # 이미지 출력
+        # cv2.imshow('canvas', img)		
+        # cv2.moveWindow("canvas", 0, 0)  # 창을 좌측 상단에 맞춰 이동
+
+
 
     elif CANV_MODE == 'SEQ':
         rng_pos = demo_sequence(img)
